@@ -1,3 +1,5 @@
+[![Build status](https://ci.appveyor.com/api/projects/status/dvnyciarevyj3vuj?svg=true)](https://ci.appveyor.com/project/hfiref0x/uacme)
+
 # UACMe
 * Defeating Windows User Account Control by abusing built-in Windows AutoElevate backdoor.
 
@@ -40,7 +42,7 @@ Keys (watch debug output with dbgview or similar for more info):
    * Implementation: ucmStandardAutoElevation
    * Works from: Windows 7 (7600)
    * Fixed in: Windows 10 TH2 (10558)
-      * How: side effect of OOBE redesign
+      * How: Side effect of OOBE redesign
 4. Author: Jon Ericson, WinNT/Gootkit, mzH
    * Type: AppCompat
    * Method: RedirectEXE Shim
@@ -202,7 +204,7 @@ Keys (watch debug output with dbgview or similar for more info):
      * Implementation: ucmSXSMethod
      * Works from: Windows 7 (7600)
      * Fixed in: Windows 10 RS3 (16232)
-        * How: sysprep.exe requires MS signed modules to load
+        * How: MitigationPolicy->ProcessImageLoadPolicy->PreferSystem32Images
 22. Author: Leo Davidson derivative
      * Type: Dll Hijack
      * Method: IFileOperation, SxS DotLocal
@@ -270,7 +272,7 @@ Keys (watch debug output with dbgview or similar for more info):
 29. Author: Enigma0x3
      * Type: Shell API
      * Method: Registry key manipulation
-     * Target(s): \system32\sdctl.exe
+     * Target(s): \system32\sdclt.exe
      * Component(s): Attacker defined
      * Implementation: ucmAppPathMethod
      * Works from: Windows 10 TH1 (10240)
@@ -288,7 +290,7 @@ Keys (watch debug output with dbgview or similar for more info):
 31. Author: Enigma0x3
      * Type: Shell API
      * Method: Registry key manipulation
-     * Target(s): \system32\sdctl.exe
+     * Target(s): \system32\sdclt.exe
      * Component(s): Attacker defined
      * Implementation: ucmSdcltIsolatedCommandMethod
      * Works from: Windows 10 TH1 (10240)
@@ -332,11 +334,11 @@ Keys (watch debug output with dbgview or similar for more info):
      * AlwaysNotify compatible, see note
      * Fixed in: Windows 10 RS5 (17686)
         * How: ntoskrnl.exe->SeTokenCanImpersonate additional access token check added
-36. Author: Thomas Vanhoutte
+36. Author: Thomas Vanhoutte aka SandboxEscaper
      * Type: Race condition
      * Method: NTFS reparse point & Dll Hijack
      * Target(s): wusa.exe
-     * Component(s): dcomcnfg.exe, mmc.exe, ole32.dll, MsCoree.dll
+     * Component(s): Attacker defined
      * Implementation: ucmJunctionMethod
      * Works from: Windows 7 (7600)
      * Fixed in: unfixed :see_no_evil:
@@ -375,8 +377,8 @@ Keys (watch debug output with dbgview or similar for more info):
      * Component(s): Attacker defined
      * Implementation: ucmCOMHandlersMethod
      * Works from: Windows 7 (7600)
-     * Fixed in: unfixed :see_no_evil:
-        * How: -
+     * Fixed in: Windows 10 19H1 (18362)
+        * How: Side effect of Windows changes
 41. Author: Oddvar Moe
      * Type: Elevated COM interface
      * Method: ICMLuaUtil
@@ -438,8 +440,8 @@ Keys (watch debug output with dbgview or similar for more info):
      * Component(s): Attacker defined
      * Implementation: ucmCOMHandlersMethod2
      * Works from: Windows 7 (7600)
-     * Fixed in: unfixed :see_no_evil:
-        * How: -
+     * Fixed in: Windows 10 19H1 (18362)
+        * How: Side effect of Windows changes
 48. Author: deroko
      * Type: Elevated COM interface
      * Method: ISPPLUAObject
@@ -485,16 +487,79 @@ Keys (watch debug output with dbgview or similar for more info):
      * Works from: Windows 7 (7600)
      * Fixed in: unfixed :see_no_evil:
         * How: -		
+53. Author: Emeric Nasi
+     * Type: Shell API
+     * Method: Registry key manipulation
+     * Target(s): \system32\sdclt.exe
+     * Component(s): Attacker defined
+     * Implementation: ucmShellDelegateExecuteCommandMethod
+     * Works from: Windows 10 (14393)
+     * Fixed in: unfixed :see_no_evil:
+        * How: -
+54. Author: egre55
+     * Type: Dll Hijack
+     * Method: Dll path search abuse
+     * Target(s): \syswow64\SystemPropertiesAdvanced.exe and other SystemProperties*.exe
+     * Component(s): \AppData\Local\Microsoft\WindowsApps\srrstr.dll
+     * Implementation: ucmEgre55Method
+     * Works from: Windows 10 (14393)
+     * Fixed in: Windows 10 19H1 (18362)
+        * How: SysDm.cpl!_CreateSystemRestorePage has been updated for secured load library call
+55. Author: James Forshaw
+     * Type: GUI Hack 
+     * Method: UIPI bypass with token modification
+     * Target(s): \system32\osk.exe, \system32\msconfig.exe
+     * Component(s): Attacker defined
+     * Implementation: ucmTokenModUIAccessMethod
+     * Works from: Windows 7 (7600)
+     * Fixed in: unfixed :see_no_evil:
+        * How: -
+56. Author: Hashim Jawad
+     * Type: Shell API
+     * Method: Registry key manipulation
+     * Target(s): \system32\WSReset.exe
+     * Component(s): Attacker defined
+     * Implementation: ucmShellDelegateExecuteCommandMethod
+     * Works from: Windows 10 (17134)
+     * Fixed in: unfixed :see_no_evil:
+        * How: -
+57. Author: Leo Davidson derivative by Win32/Gapz
+     * Type: Dll Hijack
+     * Method: IFileOperation
+     * Target(s): \system32\sysprep\sysprep.exe
+     * Component(s): unattend.dll
+     * Implementation: ucmStandardAutoElevation
+     * Works from: Windows 7 (7600)
+     * Fixed in: Windows 8.1 (9600)
+        * How: sysprep.exe hardened LoadFrom manifest elements
+58. Author: RinN
+     * Type: Elevated COM interface
+     * Method: IEditionUpgradeManager
+     * Target(s): \system32\clipup.exe
+     * Component(s): Attacker defined
+     * Implementation: ucmEditionUpgradeManagerMethod
+     * Works from: Windows 10 (14393)
+     * Fixed in: unfixed :see_no_evil:
+        * How: -
+59. Author: James Forshaw
+     * Type: AppInfo ALPC
+     * Method: RAiLaunchAdminProcess and DebugObject
+     * Target(s): Attacker defined
+     * Component(s): Attacker defined
+     * Implementation: ucmDebugObjectMethod
+     * Works from: Windows 7 (7600)
+     * Fixed in: unfixed :see_no_evil:
+        * How: -		
 
 Note:
 * Method (6) unavailable in wow64 environment starting from Windows 8;
-* Method (11) implemented in x86-32 version;
-* Method (13) (19) (30) (38) (50) implemented only in x64 version;
+* Method (11) (54) implemented only in x86-32 version;
+* Method (13) (19) (30) (50) implemented only in x64 version;
 * Method (14) require process injection, wow64 unsupported, use x64 version of this tool;
 * Method (26) is still working, however it main advantage was UAC bypass on AlwaysNotify level. Since 15031 it is gone;
 * Method (30) require x64 because it abuses WOW64 subsystem feature;
 * Method (35) AlwaysNotify compatible as there always will be running autoelevated apps or user will have to launch them anyway;
-* Method (38) require internet connection as it executes remote script located at github.com/hfiref0x/Beacon/blob/master/uac/exec.html.
+* Method (55) is not really reliable (as any GUI hacks) and included just for fun.
 
 Run examples:
 * akagi32.exe 1
@@ -503,19 +568,19 @@ Run examples:
 * akagi64 3 c:\windows\system32\charmap.exe
 
 # Warning
-* This tool shows ONLY popular UAC bypass method used by malware, and reimplement some of them in a different way improving original concepts. There are exists different, not yet known to general public methods, be aware of this;  
+* This tool shows ONLY popular UAC bypass method used by malware, and reimplement some of them in a different way improving original concepts. There are different, not yet known to the general public, methods. Be aware of this;  
 * Using (5) method will permanently turn off UAC (after reboot), make sure to do this in test environment or don't forget to re-enable UAC after tool usage;
-* Using (5), (9) methods will permanently compromise security of target keys (UAC Settings key for (5) and IFEO for (9)), if you do tests on your real machine - restore keys security manually after you complete this tool usage;
-* This tool is not intended for AV tests and not tested to work in aggressive AV environment, if you still plan to use it with installed bloatware AV soft - you use it at your own risk;
+* Using (5), (9) methods will permanently compromise security of target keys (UAC Settings key for (5) and IFEO for (9)). If you do tests on your real machine - restore keys security manually after you complete this tool usage;
+* This tool is not intended for AV tests and not tested to work in aggressive AV environment, if you still plan to use it with installed bloatware AV soft - use it at your own risk;
 * Some AV may flag this tool as HackTool, MSE/WinDefender constantly marks it as malware, nope;
 * If you run this program on real computer remember to remove all program leftovers after usage, for more info about files it drops to system folders see source code;
 * Most of methods created for x64, with no x86-32 support in mind. I don't see any sense in supporting 32 bit versions of Windows or wow64, however with small tweaks most of them will run under wow64 as well.
 
-If you wondering why this still exist and work here is the explanation, an official Microsoft WHITEFLAG (including totally incompetent statements as bonus)
+If you wondering why this still exists and working - here is the explanation - an official Microsoft WHITEFLAG (including totally incompetent statements as bonus)
 https://blogs.msdn.microsoft.com/oldnewthing/20160816-00/?p=94105
 
 # Windows 10 support and testing policy
-* EOL'ed versions of Windows 10 are not supported and therefore not tested (at moment of writing EOL'ed Windows 10 versions are: TH1 (10240), TH2 (10586));
+* EOL'ed versions of Windows 10 are not supported and therefore not tested (at moment of writing EOL'ed Windows 10 versions are: TH1 (10240), TH2 (10586)), RS2 (15063), RS3 (16299);
 * Insider builds are not supported as methods may be fixed there.
 
 # Protection
@@ -534,17 +599,27 @@ https://blogs.msdn.microsoft.com/oldnewthing/20160816-00/?p=94105
 * UACMe comes with full source code, written in C with some parts written in C#;
 * In order to build from source you need Microsoft Visual Studio 2013/2015 U2 and later versions.
 
+# Compiled Binaries
+
+* They are not provided since 2.8.9 and will never be provided in future. Coupe of reasons why not and why you should not provide them too to the general public:
+   * If you look at this project in a nutshell it is a HackTool, despite initial goal to be a demonstrator. Of course several AV's detects it as HackTool (MS WD for example), however most of VirusTotal patients detects it as generic "malware". Which is of course incorrect, however unfortunately some lazy malware writters blindly copy-paste code to their crapware (or even simple use this tool directly) thus some AV created signatures based on project code parts;
+   * By giving compiled binaries to everyone you make life of script-kiddies much easier because having need to compile from source works as perfect barrier for exceptionaliy dumb script-kiddies and "button-clickers";
+   * Having compiled binaries in the repository will ultimately lead to flagging this repository pages as malicious (due to above reasons) by various content filters (SmartScreen, Google Safe Browsing etc).
+* This decision is a final and won't be changed.
+
 ## Instructions
 
 * Select Platform ToolSet first for project in solution you want to build (Project->Properties->General): 
   * v120 for Visual Studio 2013;
   * v140 for Visual Studio 2015; 
-  * v141 for Visual Studio 2017.
+  * v141 for Visual Studio 2017;
+  * v142 for Visual Studio 2019.
 * For v140 and above set Target Platform Version (Project->Properties->General):
   * If v140 then select 8.1 (Note that Windows 8.1 SDK must be installed);
-  * If v141 then select 10.0.17134.0 (Note that Windows 10.0.17134 SDK must be installed). 
+  * If v141/v142 then select 10 (Note that Windows 10 SDK must be installed). 
   
-* Note that Fujinami module built with .NET Framework 3.0 (this is requirement for it work), so .NET Framework 3.0 must be installed if you want to build this module.  
+* Note that Fujinami module built with .NET Framework 3.0 (this is requirement for it work), so .NET Framework 3.0 must be installed if you want to build this module.
+* Can be built with SDK 8.1/10.17134/10.17763/10.18362.
 
 # References
 
@@ -552,7 +627,7 @@ https://blogs.msdn.microsoft.com/oldnewthing/20160816-00/?p=94105
 * Malicious Application Compatibility Shims, https://www.blackhat.com/docs/eu-15/materials/eu-15-Pierce-Defending-Against-Malicious-Application-Compatibility-Shims-wp.pdf
 * Junfeng Zhang from WinSxS dev team blog, https://blogs.msdn.microsoft.com/junfeng/
 * Beyond good ol' Run key, series of articles, http://www.hexacorn.com/blog
-* KernelMode.Info UACMe thread, http://www.kernelmode.info/forum/viewtopic.php?f=11&t=3643
+* KernelMode.Info UACMe thread, https://www.kernelmode.info/forum/viewtopicf985.html?f=11&t=3643
 * Command Injection/Elevation - Environment Variables Revisited, https://breakingmalware.com/vulnerabilities/command-injection-and-elevation-environment-variables-revisited
 * "Fileless" UAC Bypass Using eventvwr.exe and Registry Hijacking, https://enigma0x3.net/2016/08/15/fileless-uac-bypass-using-eventvwr-exe-and-registry-hijacking/
 * Bypassing UAC on Windows 10 using Disk Cleanup, https://enigma0x3.net/2016/07/22/bypassing-uac-on-windows-10-using-disk-cleanup/
@@ -569,9 +644,14 @@ https://blogs.msdn.microsoft.com/oldnewthing/20160816-00/?p=94105
 * Research on CMSTP.exe, https://msitpros.com/?p=3960
 * UAC bypass via elevated .NET applications, https://offsec.provadys.com/UAC-bypass-dotnet.html
 * UAC Bypass by Mocking Trusted Directories, https://medium.com/tenable-techblog/uac-bypass-by-mocking-trusted-directories-24a96675f6e
+* Yet another sdclt UAC bypass, http://blog.sevagas.com/?Yet-another-sdclt-UAC-bypass
+* UAC Bypass via SystemPropertiesAdvanced.exe and DLL Hijacking, https://egre55.github.io/system-properties-uac-bypass/
+* Accessing Access Tokens for UIAccess, https://tyranidslair.blogspot.com/2019/02/accessing-access-tokens-for-uiaccess.html
+* Fileless UAC Bypass in Windows Store Binary, https://www.activecyber.us/1/post/2019/03/windows-uac-bypass.html
+* Calling Local Windows RPC Servers from .NET, https://googleprojectzero.blogspot.com/2019/12/calling-local-windows-rpc-servers-from.html
 
 # Authors
 
-(c) 2014 - 2018 UACMe Project
+(c) 2014 - 2020 UACMe Project
 
 [![HitCount](http://hits.dwyl.io/hfiref0x/uacme.svg)](http://hits.dwyl.io/hfiref0x/uacme)

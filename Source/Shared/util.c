@@ -1,12 +1,12 @@
 /*******************************************************************************
 *
-*  (C) COPYRIGHT AUTHORS, 2017 - 2018
+*  (C) COPYRIGHT AUTHORS, 2017 - 2019
 *
 *  TITLE:       UTIL.C
 *
-*  VERSION:     3.10
+*  VERSION:     3.19
 *
-*  DATE:        18 Nov 2018
+*  DATE:        09 Apr 2019
 *
 *  Global support routines file shared between payload dlls.
 *
@@ -597,6 +597,10 @@ BOOL ucmLaunchPayload(
     startupInfo.wShowWindow = SW_SHOW;
 
     RtlSecureZeroMemory(&processInfo, sizeof(processInfo));
+
+#ifdef _TRACE_CALL
+    OutputDebugString(L"CreateProcessAsUser\r\n");
+#endif
 
     //
     // Launch payload.
@@ -1686,169 +1690,84 @@ BOOL sxsFindLoaderEntry(
 }
 
 /*
-* ucmGetProcessMitigationPolicy
+* ucmGetProcessElevationType
 *
 * Purpose:
 *
-* Request process mitigation policy values.
+* Returns process elevation type.
 *
 */
-BOOL ucmGetProcessMitigationPolicy(
-    _In_ HANDLE hProcess,
-    _In_ PROCESS_MITIGATION_POLICY Policy,
-    _In_ SIZE_T Size,
-    _Out_writes_bytes_(Size) PVOID Buffer
+BOOL ucmGetProcessElevationType(
+    _In_opt_ HANDLE ProcessHandle,
+    _Out_ TOKEN_ELEVATION_TYPE *lpType
 )
 {
-    ULONG Length = 0;
+    HANDLE hToken = NULL, processHandle = ProcessHandle;
+    NTSTATUS Status;
+    ULONG BytesRead = 0;
+    TOKEN_ELEVATION_TYPE TokenType = TokenElevationTypeDefault;
 
-    PROCESS_MITIGATION_POLICY_INFORMATION MitigationPolicy;
-
-    MitigationPolicy.Policy = (PROCESS_MITIGATION_POLICY)Policy;
-
-    if (!NT_SUCCESS(NtQueryInformationProcess(
-        hProcess,
-        ProcessMitigationPolicy,
-        &MitigationPolicy,
-        sizeof(PROCESS_MITIGATION_POLICY_INFORMATION),
-        &Length)))
-    {
-        return FALSE;
+    if (ProcessHandle == NULL) {
+        processHandle = GetCurrentProcess();
     }
 
-    RtlCopyMemory(Buffer, &MitigationPolicy, Size);
+    Status = NtOpenProcessToken(processHandle, TOKEN_QUERY, &hToken);
+    if (NT_SUCCESS(Status)) {
 
-    return TRUE;
+        Status = NtQueryInformationToken(hToken, TokenElevationType, &TokenType,
+            sizeof(TOKEN_ELEVATION_TYPE), &BytesRead);
+
+        NtClose(hToken);
+    }
+
+    if (lpType)
+        *lpType = TokenType;
+
+    return (NT_SUCCESS(Status));
 }
 
 /*
-* ucmGetRemoteCodeExecPolicies
+* ucmIsProcessElevated
 *
 * Purpose:
 *
-* Request specific process mitigation policy values all at once.
-* Use RtlFreeHeap to release returned buffer.
+* Returns process elevation state.
 *
 */
-UCM_PROCESS_MITIGATION_POLICIES *ucmGetRemoteCodeExecPolicies(
-    _In_ HANDLE hProcess
-)
+NTSTATUS ucmIsProcessElevated(
+    _In_ ULONG ProcessId,
+    _Out_ PBOOL Elevated)
 {
-    UCM_PROCESS_MITIGATION_POLICIES *Policies = NULL;
+    NTSTATUS Status;
+    ULONG Dummy;
+    HANDLE ProcessHandle, TokenHandle;
+    CLIENT_ID ClientId;
+    TOKEN_ELEVATION TokenInfo;
+    OBJECT_ATTRIBUTES ObAttr = RTL_INIT_OBJECT_ATTRIBUTES(NULL, 0);
 
-    Policies = (UCM_PROCESS_MITIGATION_POLICIES*)RtlAllocateHeap(
-        NtCurrentPeb()->ProcessHeap,
-        HEAP_ZERO_MEMORY,
-        sizeof(UCM_PROCESS_MITIGATION_POLICIES));
+    ClientId.UniqueProcess = UlongToHandle(ProcessId);
+    ClientId.UniqueThread = NULL;
 
-    if (Policies == NULL)
-        return NULL;
+    if (Elevated) *Elevated = FALSE;
 
-    ucmGetProcessMitigationPolicy(
-        hProcess,
-        (PROCESS_MITIGATION_POLICY)ProcessExtensionPointDisablePolicy,
-        sizeof(PROCESS_MITIGATION_EXTENSION_POINT_DISABLE_POLICY),
-        &Policies->ExtensionPointDisablePolicy);
+    Status = NtOpenProcess(&ProcessHandle, MAXIMUM_ALLOWED, &ObAttr, &ClientId);
+    if (NT_SUCCESS(Status)) {
 
-    ucmGetProcessMitigationPolicy(
-        hProcess,
-        (PROCESS_MITIGATION_POLICY)ProcessSignaturePolicy,
-        sizeof(PROCESS_MITIGATION_BINARY_SIGNATURE_POLICY_W10),
-        &Policies->SignaturePolicy);
+        Status = NtOpenProcessToken(ProcessHandle, TOKEN_QUERY, &TokenHandle);
+        if (NT_SUCCESS(Status)) {
 
-    ucmGetProcessMitigationPolicy(
-        hProcess,
-        (PROCESS_MITIGATION_POLICY)ProcessDynamicCodePolicy,
-        sizeof(PROCESS_MITIGATION_DYNAMIC_CODE_POLICY_W10),
-        &Policies->DynamicCodePolicy);
+            TokenInfo.TokenIsElevated = 0;
+            Status = NtQueryInformationToken(TokenHandle,
+                TokenElevation, &TokenInfo,
+                sizeof(TOKEN_ELEVATION), &Dummy);
 
-    ucmGetProcessMitigationPolicy(
-        hProcess,
-        (PROCESS_MITIGATION_POLICY)ProcessImageLoadPolicy,
-        sizeof(PROCESS_MITIGATION_IMAGE_LOAD_POLICY_W10),
-        &Policies->ImageLoadPolicy);
-
-    ucmGetProcessMitigationPolicy(
-        hProcess,
-        (PROCESS_MITIGATION_POLICY)ProcessSystemCallFilterPolicy,
-        sizeof(PROCESS_MITIGATION_SYSTEM_CALL_FILTER_POLICY_W10),
-        &Policies->SystemCallFilterPolicy);
-
-    ucmGetProcessMitigationPolicy(
-        hProcess,
-        (PROCESS_MITIGATION_POLICY)ProcessPayloadRestrictionPolicy,
-        sizeof(PROCESS_MITIGATION_PAYLOAD_RESTRICTION_POLICY_W10),
-        &Policies->PayloadRestrictionPolicy);
-
-    return Policies;
-}
-
-/*
-* ucmQueryProcessTokenIL
-*
-* Purpose:
-*
-* Return integrity level for given process.
-*
-*/
-_Success_(return == TRUE)
-BOOL ucmQueryProcessTokenIL(
-    _In_ HANDLE hProcess,
-    _Out_ PULONG IntegrityLevel
-)
-{
-    BOOL                            bCond = FALSE, bResult = FALSE;
-    HANDLE                          hToken = NULL;
-    PTOKEN_MANDATORY_LABEL          pTIL = NULL;
-    ULONG                           Length = 0;
-
-    do {
-
-        if (!NT_SUCCESS(NtOpenProcessToken(
-            hProcess,
-            TOKEN_QUERY,
-            &hToken)))
-        {
-            break;
+            if (NT_SUCCESS(Status)) {
+                if (Elevated) *Elevated = (TokenInfo.TokenIsElevated > 0);
+            }
+            NtClose(TokenHandle);
         }
+        NtClose(ProcessHandle);
+    }
 
-        if (STATUS_BUFFER_TOO_SMALL != NtQueryInformationToken(
-            hToken,
-            TokenIntegrityLevel,
-            NULL,
-            0,
-            &Length))
-        {
-            break;
-        }
-
-#pragma warning(push)
-#pragma warning(disable:6263 6255)
-
-        pTIL = (PTOKEN_MANDATORY_LABEL)_alloca(Length); //-V505
-
-#pragma warning(pop)
-
-        if (!NT_SUCCESS(NtQueryInformationToken(
-            hToken,
-            TokenIntegrityLevel,
-            pTIL,
-            Length,
-            &Length)))
-        {
-            break;
-        }
-
-        if (IntegrityLevel)
-            *IntegrityLevel = *RtlSubAuthoritySid(
-                pTIL->Label.Sid,
-                (DWORD)(UCHAR)(*RtlSubAuthorityCountSid(pTIL->Label.Sid) - 1));
-
-        bResult = TRUE;
-
-    } while (bCond);
-
-    if (hToken) NtClose(hToken);
-
-    return bResult;
+    return Status;
 }

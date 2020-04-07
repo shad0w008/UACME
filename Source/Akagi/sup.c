@@ -1,12 +1,12 @@
 /*******************************************************************************
 *
-*  (C) COPYRIGHT AUTHORS, 2015 - 2018
+*  (C) COPYRIGHT AUTHORS, 2015 - 2020
 *
 *  TITLE:       SUP.C
 *
-*  VERSION:     3.11
+*  VERSION:     3.23
 *
-*  DATE:        23 Nov 2018
+*  DATE:        17 Dec 2019
 *
 * THIS CODE AND INFORMATION IS PROVIDED "AS IS" WITHOUT WARRANTY OF
 * ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED
@@ -445,6 +445,57 @@ BOOL supWriteBufferToFile(
 }
 
 /*
+* supWriteBufferToFile2
+*
+* Purpose:
+*
+* Create new file or open existing and write/append buffer to it.
+*
+*/
+BOOL supWriteBufferToFile2(
+    _In_ LPWSTR lpFileName,
+    _In_ PVOID Buffer,
+    _In_ DWORD BufferSize,
+    _In_ BOOLEAN AppendFile
+)
+{
+    HANDLE hFile;
+    DWORD bytesIO = 0;
+    DWORD dwFlags;
+    LARGE_INTEGER ilMove;
+
+    if ((Buffer == NULL) || (BufferSize == 0))
+        return FALSE;
+
+    if (AppendFile)
+        dwFlags = OPEN_EXISTING;
+    else
+        dwFlags = CREATE_ALWAYS;
+
+    hFile = CreateFile(lpFileName,
+        GENERIC_WRITE, 0, NULL, dwFlags , 0, NULL);
+
+    if (hFile != INVALID_HANDLE_VALUE) {
+
+        if (AppendFile) {
+            ilMove.QuadPart = 0;
+            SetFilePointerEx(hFile, ilMove, NULL, FILE_END);
+        }
+
+        WriteFile(hFile, Buffer, BufferSize, &bytesIO, NULL);
+        CloseHandle(hFile);
+    }
+    else {
+#ifdef _DEBUG
+        supDebugPrint(TEXT("CreateFile"), GetLastError());
+#endif
+        return FALSE;
+    }
+
+    return (bytesIO == BufferSize);
+}
+
+/*
 * supDebugPrint
 *
 * Purpose:
@@ -485,7 +536,6 @@ VOID supDebugPrint(
         RtlFreeHeap(Heap, 0, lpBuffer);
     }
 
-    SetLastError(status);
 }
 
 /*
@@ -737,6 +787,7 @@ BOOL supRunProcess2(
     _In_ LPWSTR lpszProcessName,
     _In_opt_ LPWSTR lpszParameters,
     _In_opt_ LPWSTR lpVerb,
+    _In_ INT nShow,
     _In_ BOOL fWait
 )
 {
@@ -751,13 +802,12 @@ BOOL supRunProcess2(
     shinfo.fMask = SEE_MASK_NOCLOSEPROCESS;
     shinfo.lpFile = lpszProcessName;
     shinfo.lpParameters = lpszParameters;
-    shinfo.lpDirectory = NULL;
-    shinfo.nShow = SW_SHOW;
+    shinfo.nShow = nShow;
     shinfo.lpVerb = lpVerb;
     bResult = ShellExecuteEx(&shinfo);
     if (bResult) {
         if (fWait) {
-            if (WaitForSingleObject(shinfo.hProcess, 32000) == WAIT_TIMEOUT)
+            if (WaitForSingleObject(shinfo.hProcess, 120000) == WAIT_TIMEOUT)
                 TerminateProcess(shinfo.hProcess, WAIT_TIMEOUT);
         }
         CloseHandle(shinfo.hProcess);
@@ -778,7 +828,7 @@ BOOL supRunProcess(
     _In_opt_ LPWSTR lpszParameters
 )
 {
-    return supRunProcess2(lpszProcessName, lpszParameters, NULL, TRUE);
+    return supRunProcess2(lpszProcessName, lpszParameters, NULL, SW_SHOW, TRUE);
 }
 
 /*
@@ -1171,6 +1221,28 @@ BOOLEAN supSetCheckSumForMappedFile(
 }
 
 /*
+* ucmxBuildVersionString
+*
+* Purpose:
+*
+* Combine version numbers into string.
+*
+*/
+VOID ucmxBuildVersionString(
+    _In_ WCHAR *pszVersion)
+{
+    wsprintf(pszVersion, TEXT("%s v %lu.%lu.%lu.%lu"),
+        PROGRAM_SHORTNAME,
+        UCM_VERSION_MAJOR,
+        UCM_VERSION_MINOR,
+        UCM_VERSION_REVISION,
+        UCM_VERSION_BUILD);
+
+    if (UCM_IS_VNEXT)
+        _strcat(pszVersion, TEXT(" QW"));
+}
+
+/*
 * ucmShowMessage
 *
 * Purpose:
@@ -1183,14 +1255,18 @@ VOID ucmShowMessage(
     _In_ LPWSTR lpszMsg
 )
 {
+    WCHAR szVersion[100];
+
     if (OutputToDebugger) {
         OutputDebugString(lpszMsg);
         OutputDebugString(TEXT("\r\n"));
     }
     else {
+        szVersion[0] = 0;
+        ucmxBuildVersionString(szVersion);
         MessageBoxW(GetDesktopWindow(),
             lpszMsg,
-            PROGRAMTITLE_VERSION,
+            szVersion,
             MB_ICONINFORMATION);
     }
 }
@@ -1207,9 +1283,13 @@ INT ucmShowQuestion(
     _In_ LPWSTR lpszMsg
 )
 {
+    WCHAR szVersion[100];
+
+    szVersion[0] = 0;
+    ucmxBuildVersionString(szVersion);
     return MessageBoxW(GetDesktopWindow(), 
         lpszMsg, 
-        PROGRAMTITLE_VERSION, 
+        szVersion, 
         MB_YESNO);
 }
 
@@ -1759,8 +1839,10 @@ BOOL supSetEnvVariable(
 
     } while (bCond);
 
-    if (hKey != NULL)
+    if (hKey != NULL) {
+        RegFlushKey(hKey);
         RegCloseKey(hKey);
+    }
 
     return bResult;
 }
@@ -1996,91 +2078,50 @@ BOOL supDesktopToName(
 }
 
 /*
-* supQueryNtBuildNumber
+* supReplaceDllEntryPoint
 *
 * Purpose:
 *
-* Query NtBuildNumber value from ntoskrnl image.
+* Replace DLL entry point and optionally convert dll to exe.
 *
 */
-BOOL supQueryNtBuildNumber(
-    _Inout_ PULONG BuildNumber
+BOOL supReplaceDllEntryPoint(
+    _In_ PVOID DllImage,
+    _In_ ULONG SizeOfDllImage,
+    _In_ LPCSTR lpEntryPointName,
+    _In_ BOOL fConvertToExe
 )
 {
     BOOL bResult = FALSE;
-    HMODULE hModule;
-    PVOID Ptr;
-    WCHAR szBuffer[MAX_PATH * 2];
-
-    RtlSecureZeroMemory(szBuffer, sizeof(szBuffer));
-    _strcpy(szBuffer, USER_SHARED_DATA->NtSystemRoot);
-    _strcat(szBuffer, L"\\system32\\ntoskrnl.exe");
-
-    hModule = LoadLibraryEx(szBuffer, NULL, DONT_RESOLVE_DLL_REFERENCES);
-    if (hModule == NULL)
-        return bResult;
-
-#pragma warning(push)
-#pragma warning(disable: 4054)//code to data
-    Ptr = (PVOID)GetProcAddress(hModule, "NtBuildNumber");
-#pragma warning(pop)
-    if (Ptr) {
-        *BuildNumber = (*(PULONG)Ptr & 0xffff);
-        bResult = TRUE;
-    }
-    FreeLibrary(hModule);
-    return bResult;
-}
-
-/*
-* supConvertDllToExeSetNewEP
-*
-* Purpose:
-*
-* Convert payload dll to exe and set new entrypoint.
-*
-*/
-BOOL supConvertDllToExeSetNewEP(
-    _In_ PVOID pvImage,
-    _In_ ULONG dwImageSize,
-    _In_ LPSTR lpszEntryPoint
-)
-{
-    BOOL              bResult = FALSE;
     PIMAGE_NT_HEADERS NtHeaders;
-    DWORD             DllVirtualSize;
-    PVOID             EntryPoint, DllBase;
+    DWORD DllVirtualSize;
+    PVOID DllBase, EntryPoint;
 
-    NtHeaders = RtlImageNtHeader(pvImage);
-    if (NtHeaders != NULL) {
+    NtHeaders = RtlImageNtHeader(DllImage);
+    if (NtHeaders) {
 
-        //
-        // Preload image.
-        //
         DllVirtualSize = 0;
-        DllBase = PELoaderLoadImage(pvImage, &DllVirtualSize);
-        if (DllBase != NULL) {
-
+        DllBase = PELoaderLoadImage(DllImage, &DllVirtualSize);
+        if (DllBase) {
             //
-            // Get the new entrypoint from target export.
+            // Get the new entrypoint.
             //
-            EntryPoint = PELoaderGetProcAddress(DllBase, lpszEntryPoint);
-            if (EntryPoint != NULL) {
-
+            EntryPoint = PELoaderGetProcAddress(DllBase, (PCHAR)lpEntryPointName);
+            if (EntryPoint) {
                 //
                 // Set new entrypoint and recalculate checksum.
                 //
                 NtHeaders->OptionalHeader.AddressOfEntryPoint =
                     (ULONG)((ULONG_PTR)EntryPoint - (ULONG_PTR)DllBase);
 
-                NtHeaders->FileHeader.Characteristics &= ~IMAGE_FILE_DLL;
+                if (fConvertToExe)
+                    NtHeaders->FileHeader.Characteristics &= ~IMAGE_FILE_DLL;
 
                 NtHeaders->OptionalHeader.CheckSum =
-                    supCalculateCheckSumForMappedFile(pvImage, dwImageSize);
+                    supCalculateCheckSumForMappedFile(DllImage, SizeOfDllImage);
 
                 bResult = TRUE;
             }
-
             VirtualFree(DllBase, 0, MEM_RELEASE);
         }
     }
@@ -2125,7 +2166,7 @@ BOOL supQuerySystemRoot(
             break;
 
         Status = supRegReadValue(hKey, L"SystemRoot", REG_SZ, (PVOID*)&lpData, &Length, context->ucmHeap);
-        if (!NT_SUCCESS(Status))
+        if (!NT_SUCCESS(Status) || (lpData == NULL))
             break;
 
         ccm = Length / sizeof(WCHAR);
@@ -2526,34 +2567,6 @@ BOOL supIsConsentApprovedInterface(
 }
 
 /*
-* supIsDebugPortPresent
-*
-* Purpose:
-*
-* Return TRUE if current process has debug port FALSE otherwise.
-*
-*/
-BOOL supIsDebugPortPresent(
-    VOID
-)
-{
-    DWORD_PTR DebugPortPresent = 0, dwBuffer = 0;
-
-    if (NT_SUCCESS(NtQueryInformationProcess(
-        NtCurrentProcess(),
-        ProcessDebugPort,
-        &dwBuffer,
-        sizeof(dwBuffer),
-        NULL)))
-    {
-        DebugPortPresent = (dwBuffer != 0);
-    }
-
-    return (DebugPortPresent == 1);
-}
-
-
-/*
 * supGetProcessMitigationPolicy
 *
 * Purpose:
@@ -2951,18 +2964,10 @@ PVOID supCreateUacmeContext(
 
     IsWow64 = supIsProcess32bit(NtCurrentProcess());
 
-    if (IsWow64) {
-        RtlSecureZeroMemory(&osv, sizeof(osv));
-        osv.dwOSVersionInfoSize = sizeof(osv);
-        RtlGetVersion((PRTL_OSVERSIONINFOW)&osv);
-        NtBuildNumber = osv.dwBuildNumber;
-
-    }
-    else {
-        if (!supQueryNtBuildNumber(&NtBuildNumber)) {
-            return NULL;
-        }
-    }
+    RtlSecureZeroMemory(&osv, sizeof(osv));
+    osv.dwOSVersionInfoSize = sizeof(osv);
+    RtlGetVersion((PRTL_OSVERSIONINFOW)&osv);
+    NtBuildNumber = osv.dwBuildNumber;
 
     if (NtBuildNumber < 7000) {
         return NULL;
@@ -3137,4 +3142,145 @@ BOOL supDecodeAndWriteBufferToFile(
         return bResult;
     }
     return FALSE;
+}
+
+/*
+* supEnableDisableWow64Redirection
+*
+* Purpose:
+*
+* Enable/Disable Wow64 redirection.
+*
+*/
+NTSTATUS supEnableDisableWow64Redirection(
+    _In_ BOOL bDisable
+)
+{
+    PVOID OldValue = NULL, Value;
+
+    if (bDisable)
+        Value = IntToPtr(TRUE);
+    else
+        Value = IntToPtr(FALSE);
+
+    return RtlWow64EnableFsRedirectionEx(Value, &OldValue);
+}
+
+/*
+* supIndirectRegAdd
+*
+* Purpose:
+*
+* REG "add" command.
+*
+*/
+BOOLEAN supIndirectRegAdd(
+    _In_ WCHAR* pszRootKey,
+    _In_ WCHAR* pszKey,
+    _In_opt_ WCHAR* pszValue,
+    _In_opt_ WCHAR* pszDataType,
+    _In_ WCHAR* pszData
+)
+{
+    BOOLEAN bResult = FALSE;
+    LPWSTR pszBuffer;
+    HANDLE hProcess;
+    SIZE_T sz;
+
+    sz = 1 + _strlen(pszRootKey) +
+        _strlen(pszKey) +
+        _strlen(pszData);
+
+    if (pszDataType) sz += _strlen(pszDataType);
+    if (pszValue) sz += _strlen(pszValue);
+
+    pszBuffer = (PWSTR)supHeapAlloc((MAX_PATH * 4) + (sz * sizeof(WCHAR)));
+    if (pszBuffer == NULL)
+        return FALSE;
+
+    _strcpy(pszBuffer, g_ctx->szSystemDirectory);
+    _strcat(pszBuffer, REG_EXE);
+    _strcat(pszBuffer, TEXT(" add "));
+    _strcat(pszBuffer, pszRootKey);
+    _strcat(pszBuffer, TEXT("\\"));
+    _strcat(pszBuffer, pszKey);
+
+    if (pszValue) {
+        _strcat(pszBuffer, TEXT(" /v \""));
+        _strcat(pszBuffer, pszValue);
+        _strcat(pszBuffer, TEXT("\""));
+    }
+
+    if (pszDataType) {
+        _strcat(pszBuffer, TEXT(" /t "));
+        _strcat(pszBuffer, pszDataType);
+    }
+
+    _strcat(pszBuffer, TEXT(" /d \""));
+    _strcat(pszBuffer, pszData);
+    _strcat(pszBuffer, TEXT("\" /f"));
+
+    hProcess = supRunProcessIndirect(
+        pszBuffer,
+        NULL,
+        NULL,
+        0,
+        SW_HIDE,
+        NULL);
+
+    if (hProcess) {
+        if (WaitForSingleObject(hProcess, 5000) == WAIT_TIMEOUT)
+            TerminateProcess(hProcess, 0);
+        CloseHandle(hProcess);
+        bResult = TRUE;
+    }
+
+    supHeapFree(pszBuffer);
+
+    return bResult;
+}
+
+/*
+* supIsNetfx48PlusInstalled
+*
+* Purpose:
+*
+* Detect Netfx 4.8+
+*
+*/
+BOOLEAN supIsNetfx48PlusInstalled(
+    VOID)
+{
+    HKEY hKey = NULL;
+    DWORD Netfx48ReleaseVersion = 528040;
+    DWORD dwReleaseVersion = 0;
+    DWORD cbData = sizeof(DWORD), dwType = REG_DWORD;
+
+    if (ERROR_SUCCESS == RegOpenKeyEx(HKEY_LOCAL_MACHINE, T_DOTNET_FULL, 0, KEY_READ, &hKey)) {
+        RegQueryValueEx(hKey, TEXT("Release"), NULL, &dwType, (LPBYTE)&dwReleaseVersion, &cbData);
+        RegCloseKey(hKey);
+    }
+
+    return (dwReleaseVersion >= Netfx48ReleaseVersion);
+}
+
+
+/*
+* supGetProcessDebugObject
+*
+* Purpose:
+*
+* Reference process debug object.
+*
+*/
+NTSTATUS supGetProcessDebugObject(
+    _In_ HANDLE ProcessHandle,
+    _Out_ PHANDLE DebugObjectHandle)
+{
+    return NtQueryInformationProcess(
+        ProcessHandle,
+        ProcessDebugObjectHandle,
+        DebugObjectHandle,
+        sizeof(HANDLE),
+        NULL);
 }

@@ -1,12 +1,12 @@
 #/*******************************************************************************
 *
-*  (C) COPYRIGHT AUTHORS, 2014 - 2017
+*  (C) COPYRIGHT AUTHORS, 2014 - 2020
 *
 *  TITLE:       SUP.H
 *
-*  VERSION:     1.27
+*  VERSION:     1.47
 *
-*  DATE:        28 Oct 2017
+*  DATE:        22 Mar 2020
 *
 *  Common header file for the program support routines.
 *
@@ -19,37 +19,33 @@
 #pragma once
 
 BOOL supIsCorImageFile(
-    PVOID ImageBase
-    );
+    PVOID ImageBase);
 
 LPWSTR supReadKeyString(
     HKEY hKey,
     LPWSTR KeyValue,
-    PDWORD pdwDataSize
-    );
+    PDWORD pdwDataSize);
 
 PVOID supQueryKeyName(
-    HKEY hKey,
-    PSIZE_T ReturnedLength
-    );
+    _In_ HKEY hKey,
+    _Out_opt_ PSIZE_T ReturnedLength);
 
 BOOLEAN supIsProcess32bit(
-    _In_ HANDLE hProcess
-    );
+    _In_ HANDLE hProcess);
 
 PVOID supFindPattern(
-    CONST PBYTE Buffer,
-    SIZE_T BufferSize,
-    CONST PBYTE Pattern,
-    SIZE_T PatternSize
-    );
+    _In_ CONST PBYTE Buffer,
+    _In_ SIZE_T BufferSize,
+    _In_ CONST PBYTE Pattern,
+    _In_ SIZE_T PatternSize);
 
 LRESULT supRegReadDword(
     _In_ HKEY hKey,
     _In_ LPWSTR lpValueName,
-    _In_ LPDWORD Value
-    );
+    _In_ LPDWORD Value);
 
-BOOL supQueryNtBuildNumber(
-    _Inout_ PULONG BuildNumber
-    );
+PVOID supLookupImageSectionByName(
+    _In_ CHAR* SectionName,
+    _In_ ULONG SectionNameLength,
+    _In_ PVOID DllBase,
+    _Out_ PULONG SectionSize);

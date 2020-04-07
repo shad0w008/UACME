@@ -1,12 +1,12 @@
 #/*******************************************************************************
 *
-*  (C) COPYRIGHT AUTHORS, 2014 - 2017
+*  (C) COPYRIGHT AUTHORS, 2014 - 2019
 *
 *  TITLE:       COMOBJ.H
 *
-*  VERSION:     1.11
+*  VERSION:     1.45
 *
-*  DATE:        28 Feb 2017
+*  DATE:        22 Oct 2019
 *
 *  Header file for the COM registry objects scan.
 *
@@ -20,6 +20,8 @@
 
 #define UacCOMDataCommonType         0
 #define UacCOMDataInterfaceType      1
+#define UacCOMDataInterfaceTypeVF    2
+#define UacCOMDataVirtualFactory     3
 
 typedef struct _INTERFACE_INFO {
     IID iid;
@@ -46,11 +48,17 @@ typedef struct _UAC_REGISTRY_DATA {
     LPWSTR LocalizedString;
 } UAC_REGISTRY_DATA, *PUAC_REGISTRY_DATA;
 
-typedef VOID(WINAPI *REGCALLBACK)(
-    _In_ UAC_REGISTRY_DATA *Data
-    );
-
 VOID CoListInformation(
-    _In_ REGCALLBACK OutputCallback
-    );
+    _In_ OUTPUTCALLBACK OutputCallback,
+    _In_ INTERFACE_INFO_LIST *InterfaceList);
 
+BOOL CoEnumInterfaces(
+    _Inout_ INTERFACE_INFO_LIST *InterfaceList);
+
+VOID CoScanAutoApprovalList(
+    _In_ OUTPUTCALLBACK OutputCallback,
+    _In_ INTERFACE_INFO_LIST *InterfaceList);
+
+VOID CoScanBrokerApprovalList(
+    _In_ OUTPUTCALLBACK OutputCallback,
+    _In_ INTERFACE_INFO_LIST *InterfaceList);

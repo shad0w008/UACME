@@ -1,12 +1,12 @@
 /*******************************************************************************
 *
-*  (C) COPYRIGHT AUTHORS, 2017 - 2018
+*  (C) COPYRIGHT AUTHORS, 2017 - 2020
 *
 *  TITLE:       CONSTS.H
 *
-*  VERSION:     1.35
+*  VERSION:     1.47
 *
-*  DATE:        18 Nov 2018
+*  DATE:        22 Mar 2020
 *
 *  Global consts definition file.
 *
@@ -19,9 +19,10 @@
 #pragma once
 
 #define YUUBARI_MIN_SUPPORTED_NT_BUILD 7600
-#define YUUBARI_MAX_SUPPORTED_NT_BUILD 18272
+#define YUUBARI_MAX_SUPPORTED_NT_BUILD 19041
 
 #define T_UAC_COM_AUTOAPPROVAL_LIST    TEXT("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\UAC\\COMAutoApprovalList") //RS1+
+#define T_UAC_BROKER_APPROVAL_LIST     TEXT("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\CloudExperienceHost\\Broker\\ElevatedClsids")
 #define T_UAC_SETTINGS_KEY             TEXT("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System")
 #define T_UAC_PROMPT_BEHAVIOR          TEXT("ConsentPromptBehaviorAdmin")
 #define T_UAC_SECURE_DESKTOP           TEXT("PromptOnSecureDesktop")
@@ -36,8 +37,17 @@
 #define T_FLAG_INSTALLERDETECT_ENABLED TEXT("InstallerDetectEnabled")
 
 #define T_PROGRAM_NAME                 TEXT("Yuubari")
-#define T_PROGRAM_TITLE                TEXT("[UacView] UAC information gathering tool, v1.3.5 (Nov 18, 2018)\n")
+#define T_PROGRAM_TITLE                TEXT("[UacView] UAC information gathering tool, v1.4.7 (Mar 22, 2020)\r\n")
 
-#define T_HELP	TEXT("Optional parameters to execute: \n\n\r\
-YUUBARI [/v] \n\n\r\
+#define T_HELP	TEXT("Optional parameters to execute: \r\n\n\
+YUUBARI [/v] \r\n\n\
   /v - produce verbose output.")
+
+#define T_SPLIT TEXT("===============================================================")
+#define T_BASIC_HEAD TEXT("\r\n[UacView] Basic UAC settings\r\n")
+#define T_COM_HEAD TEXT("\r\n[UacView] Autoelevated COM objects\r\n")
+#define T_COM_APPROVE_HEAD TEXT("\r\n[UacView] COMAutoApproval list\r\n")
+#define T_BROKER_APPROVE_HEAD TEXT("\r\n[UacView] Broker approval list\r\n")
+#define T_WINFILES_HEAD TEXT("\r\n[UacView] Autoelevated applications in Windows directory\r\n")
+#define T_PFDIRFILES_HEAD TEXT("\r\n[UacView] Autoelevated applications in Program Files directory\r\n")
+#define T_APPINFO_HEAD TEXT("\r\n[UacView] Appinfo data\r\n")

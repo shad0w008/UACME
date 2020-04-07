@@ -1,12 +1,12 @@
 /*******************************************************************************
 *
-*  (C) COPYRIGHT AUTHORS, 2014 - 2018
+*  (C) COPYRIGHT AUTHORS, 2014 - 2020
 *
 *  TITLE:       SUP.C
 *
-*  VERSION:     1.35
+*  VERSION:     1.47
 *
-*  DATE:        19 Nov 2018
+*  DATE:        22 Mar 2020
 *
 * THIS CODE AND INFORMATION IS PROVIDED "AS IS" WITHOUT WARRANTY OF
 * ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED
@@ -88,8 +88,8 @@ LPWSTR supReadKeyString(
 *
 */
 PVOID supQueryKeyName(
-    HKEY hKey,
-    PSIZE_T ReturnedLength
+    _In_ HKEY hKey,
+    _Out_opt_ PSIZE_T ReturnedLength
     )
 {
     NTSTATUS    status;
@@ -99,16 +99,19 @@ PVOID supQueryKeyName(
 
     POBJECT_NAME_INFORMATION pObjName = NULL;
 
+    if (ReturnedLength)
+        *ReturnedLength = 0;
+
     NtQueryObject(hKey, ObjectNameInformation, NULL, 0, &ulen);
     pObjName = (POBJECT_NAME_INFORMATION)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, ulen);
     if (pObjName) {
         status = NtQueryObject(hKey, ObjectNameInformation, pObjName, ulen, NULL);
         if (NT_SUCCESS(status)) {
             if ((pObjName->Name.Buffer != NULL) && (pObjName->Name.Length > 0)) {
-                sz = (_strlen(pObjName->Name.Buffer) * sizeof(WCHAR)) + sizeof(UNICODE_NULL);
+                sz = pObjName->Name.Length + sizeof(UNICODE_NULL);
                 ReturnBuffer = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sz);
                 if (ReturnBuffer) {
-                    _strncpy((LPTSTR)ReturnBuffer, sz / sizeof(WCHAR), pObjName->Name.Buffer, sz / sizeof(WCHAR));
+                    RtlCopyMemory(ReturnBuffer, pObjName->Name.Buffer, pObjName->Name.Length);
                     if (ReturnedLength)
                         *ReturnedLength = sz;
                 }
@@ -157,30 +160,36 @@ BOOLEAN supIsProcess32bit(
 *
 */
 PVOID supFindPattern(
-    CONST PBYTE Buffer,
-    SIZE_T BufferSize,
-    CONST PBYTE Pattern,
-    SIZE_T PatternSize
-    )
+    _In_ CONST PBYTE Buffer,
+    _In_ SIZE_T BufferSize,
+    _In_ CONST PBYTE Pattern,
+    _In_ SIZE_T PatternSize
+)
 {
-    PBYTE	p = Buffer;
+    PBYTE p0 = Buffer, pnext;
 
     if (PatternSize == 0)
         return NULL;
+
     if (BufferSize < PatternSize)
         return NULL;
-    BufferSize -= PatternSize;
 
     do {
-        p = (PBYTE)memchr(p, Pattern[0], BufferSize - (p - Buffer));
-        if (p == NULL)
+        pnext = (PBYTE)memchr(p0, Pattern[0], BufferSize);
+        if (pnext == NULL)
             break;
 
-        if (memcmp(p, Pattern, PatternSize) == 0)
-            return p;
+        BufferSize -= (ULONG_PTR)(pnext - p0);
 
-        p++;
-    } while (BufferSize - (p - Buffer) > 0); //-V555
+        if (BufferSize < PatternSize)
+            return NULL;
+
+        if (memcmp(pnext, Pattern, PatternSize) == 0)
+            return pnext;
+
+        p0 = pnext + 1;
+        --BufferSize;
+    } while (BufferSize > 0);
 
     return NULL;
 }
@@ -215,38 +224,68 @@ LRESULT supRegReadDword(
 }
 
 /*
-* supQueryNtBuildNumber
+* supLookupImageSectionByName
 *
 * Purpose:
 *
-* Query NtBuildNumber value from ntoskrnl image.
+* Lookup section pointer and size for section name.
 *
 */
-BOOL supQueryNtBuildNumber(
-    _Inout_ PULONG BuildNumber
+PVOID supLookupImageSectionByName(
+    _In_ CHAR* SectionName,
+    _In_ ULONG SectionNameLength,
+    _In_ PVOID DllBase,
+    _Out_ PULONG SectionSize
 )
 {
-    BOOL bResult = FALSE;
-    HMODULE hModule;
-    PVOID Ptr;
-    WCHAR szBuffer[MAX_PATH * 2];
+    BOOLEAN bFound = FALSE;
+    ULONG i;
+    PVOID Section;
+    IMAGE_NT_HEADERS* NtHeaders = RtlImageNtHeader(DllBase);
+    IMAGE_SECTION_HEADER* SectionTableEntry;
 
-    RtlSecureZeroMemory(szBuffer, sizeof(szBuffer));
-    _strcpy(szBuffer, USER_SHARED_DATA->NtSystemRoot);
-    _strcat(szBuffer, L"\\system32\\ntoskrnl.exe");
+    //
+    // Assume failure.
+    //
+    if (SectionSize)
+        *SectionSize = 0;
 
-    hModule = LoadLibraryEx(szBuffer, NULL, DONT_RESOLVE_DLL_REFERENCES);
-    if (hModule == NULL)
-        return bResult;
+    if (NtHeaders == NULL)
+        return NULL;
 
-#pragma warning(push)
-#pragma warning(disable: 4054)//code to data
-    Ptr = (PVOID)GetProcAddress(hModule, "NtBuildNumber");
-#pragma warning(pop)
-    if (Ptr) {
-        *BuildNumber = (*(PULONG)Ptr & 0xffff);
-        bResult = TRUE;
+    SectionTableEntry = (PIMAGE_SECTION_HEADER)((PCHAR)NtHeaders +
+        sizeof(ULONG) +
+        sizeof(IMAGE_FILE_HEADER) +
+        NtHeaders->FileHeader.SizeOfOptionalHeader);
+
+    //
+    // Locate section.
+    //
+    i = NtHeaders->FileHeader.NumberOfSections;
+    while (i > 0) {
+
+        if (_strncmp_a(
+        (CHAR*)SectionTableEntry->Name,
+            SectionName,
+            SectionNameLength) == 0)
+        {
+            bFound = TRUE;
+            break;
+        }
+
+        i -= 1;
+        SectionTableEntry += 1;
     }
-    FreeLibrary(hModule);
-    return bResult;
+
+    //
+    // Section not found, abort scan.
+    //
+    if (!bFound)
+        return NULL;
+
+    Section = (PVOID)((ULONG_PTR)DllBase + SectionTableEntry->VirtualAddress);
+    if (SectionSize)
+        *SectionSize = SectionTableEntry->Misc.VirtualSize;
+
+    return Section;
 }

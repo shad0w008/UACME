@@ -1,12 +1,12 @@
 /*******************************************************************************
 *
-*  (C) COPYRIGHT AUTHORS, 2014 - 2018
+*  (C) COPYRIGHT AUTHORS, 2014 - 2020
 *
 *  TITLE:       MAIN.C
 *
-*  VERSION:     3.11
+*  VERSION:     3.23
 *
-*  DATE:        23 Nov 2018
+*  DATE:        17 Dec 2019
 *
 *  Program entry point.
 *
@@ -67,7 +67,7 @@ LRESULT CALLBACK ucmDummyWindowProc(
 * supHeapAlloc unavailable during this routine and calls from it.
 *
 */
-UINT ucmInit(
+NTSTATUS ucmInit(
     _Inout_ UCM_METHOD *RunMethod,
     _In_reads_or_z_opt_(OptionalParameterLength) LPWSTR OptionalParameter,
     _In_opt_ ULONG OptionalParameterLength,
@@ -76,7 +76,7 @@ UINT ucmInit(
 {
     BOOL        cond = FALSE;
     UCM_METHOD  Method;
-    DWORD       Result = ERROR_SUCCESS;
+    NTSTATUS    Result = STATUS_SUCCESS;
     PVOID       Ptr;
     LPWSTR      optionalParameter = NULL;
     ULONG       optionalParameterLength = 0;
@@ -113,12 +113,12 @@ UINT ucmInit(
         bytesIO = 0;
         RtlQueryElevationFlags(&bytesIO);
         if ((bytesIO & DBG_FLAG_ELEVATION_ENABLED) == 0) {
-            Result = ERROR_ELEVATION_REQUIRED;
+            Result = STATUS_ELEVATION_REQUIRED;
             break;
         }
 
         if (FAILED(CoInitializeEx(NULL, COINIT_APARTMENTTHREADED))) {
-            Result = ERROR_INTERNAL_ERROR;
+            Result = STATUS_INTERNAL_ERROR;
             break;
         }
 
@@ -133,7 +133,7 @@ UINT ucmInit(
             RtlSecureZeroMemory(szBuffer, sizeof(szBuffer));
             GetCommandLineParam(GetCommandLine(), 1, szBuffer, MAX_PATH, &bytesIO);
             if (bytesIO == 0)
-                return ERROR_BAD_ARGUMENTS;
+                return STATUS_INVALID_PARAMETER;
 
             Method = (UCM_METHOD)strtoul(szBuffer);
             *RunMethod = Method;
@@ -145,20 +145,20 @@ UINT ucmInit(
 
 #ifndef _DEBUG
         if (Method == UacMethodTest)
-            return ERROR_BAD_ARGUMENTS;
+            return STATUS_INVALID_PARAMETER;
 #endif
         if (Method >= UacMethodMax)
-            return ERROR_BAD_ARGUMENTS;
+            return STATUS_INVALID_PARAMETER;
 
 #ifndef _DEBUG
         ElevType = TokenElevationTypeDefault;
         if (supGetElevationType(&ElevType)) {
             if (ElevType != TokenElevationTypeLimited) {
-                return ERROR_UNSUPPORTED_TYPE;
+                return STATUS_NOT_SUPPORTED;
             }
         }
         else {
-            Result = ERROR_INTERNAL_ERROR;
+            Result = STATUS_INTERNAL_ERROR;
             break;
         }
 #endif
@@ -254,7 +254,7 @@ UINT ucmInit(
     } while (cond);
 
     if (g_ctx == NULL) {
-        Result = ERROR_FATAL_APP_EXIT;
+        Result = STATUS_FATAL_APP_EXIT;
     }
 
     return Result;
@@ -268,55 +268,67 @@ UINT ucmInit(
 * Program entry point.
 *
 */
-UINT ucmMain(
+NTSTATUS WINAPI ucmMain(
     _In_opt_ UCM_METHOD Method,
     _In_reads_or_z_opt_(OptionalParameterLength) LPWSTR OptionalParameter,
     _In_opt_ ULONG OptionalParameterLength,
     _In_ BOOL OutputToDebugger
 )
 {
-    UINT        uResult;
+    NTSTATUS    Status;
     UCM_METHOD  method = Method;
+    WCHAR szMessage[MAX_PATH + 1];
+    LPWSTR lpBufferPtr;
 
     wdCheckEmulatedVFS();
 
-    uResult = ucmInit(&method,
+    Status = ucmInit(&method,
         OptionalParameter,
         OptionalParameterLength,
         OutputToDebugger);
 
-    switch (uResult) {
+    RtlSecureZeroMemory(&szMessage, sizeof(szMessage));
+    lpBufferPtr = (LPWSTR)&szMessage;
 
-    case ERROR_ELEVATION_REQUIRED:
-        ucmShowMessage(OutputToDebugger, TEXT("Please enable UAC for this account."));
+    switch (Status) {
+
+    case STATUS_ELEVATION_REQUIRED:
+        if (DecodeStringById(IDSB_USAGE_UAC_REQUIRED, lpBufferPtr, MAX_PATH * sizeof(WCHAR))) {
+            ucmShowMessage(OutputToDebugger, lpBufferPtr);
+            RtlSecureZeroMemory(szMessage, sizeof(szMessage));
+        }
         break;
 
-    case ERROR_UNSUPPORTED_TYPE:
-        ucmShowMessage(OutputToDebugger, TEXT("Admin account with limited token required."));
+    case STATUS_NOT_SUPPORTED:
+        if (DecodeStringById(IDSB_USAGE_ADMIN_REQUIRED, lpBufferPtr, MAX_PATH * sizeof(WCHAR))) {
+            ucmShowMessage(OutputToDebugger, lpBufferPtr);
+            RtlSecureZeroMemory(szMessage, sizeof(szMessage));
+        }
         break;
 
-    case ERROR_INSTALL_PLATFORM_UNSUPPORTED:
-        ucmShowMessage(OutputToDebugger, TEXT("This Windows version is not supported."));
+    case STATUS_INVALID_PARAMETER:
+        if (DecodeStringById(IDSB_USAGE_HELP, lpBufferPtr, MAX_PATH * sizeof(WCHAR))) {
+            ucmShowMessage(OutputToDebugger, lpBufferPtr);
+            RtlSecureZeroMemory(szMessage, sizeof(szMessage));
+        }
         break;
 
-    case ERROR_BAD_ARGUMENTS:
-        ucmShowMessage(OutputToDebugger, T_USAGE_HELP);
+    case STATUS_FATAL_APP_EXIT:
+        return Status;
         break;
+
     default:
         break;
 
     }
 
-    if (uResult != ERROR_SUCCESS) {
-        return ERROR_INTERNAL_ERROR;
+    if (Status != STATUS_SUCCESS) {
+        return Status;
     }
 
     supMasqueradeProcess(FALSE);
 
-    if (MethodsManagerCall(method))
-        return ERROR_SUCCESS;
-    else
-        return GetLastError();
+    return MethodsManagerCall(method);
 }
 
 /*
@@ -391,7 +403,7 @@ DWORD WINAPI ucmCalleeThread(_In_ LPVOID lpParameter)
 * Dll only export.
 *
 */
-ULONG WINAPI ucmRunMethod(
+NTSTATUS WINAPI ucmRunMethod(
     _In_ UCM_METHOD Method,
     _In_reads_or_z_opt_(OptionalParameterLength) LPWSTR OptionalParameter,
     _In_ ULONG OptionalParameterLength,
@@ -429,13 +441,13 @@ ULONG WINAPI ucmRunMethod(
         }
 
     }
-    return ERROR_ACCESS_DENIED;
+    return STATUS_ACCESS_DENIED;
 #else
     UNREFERENCED_PARAMETER(Method);
     UNREFERENCED_PARAMETER(OptionalParameter);
     UNREFERENCED_PARAMETER(OptionalParameterLength);
     UNREFERENCED_PARAMETER(OutputToDebugger);
-    return ERROR_NOT_SUPPORTED;
+    return STATUS_NOT_IMPLEMENTED;
 #endif
 }
 
@@ -449,7 +461,7 @@ ULONG WINAPI ucmRunMethod(
 *
 */
 #pragma comment(linker, "/ENTRY:main")
-VOID main()
+VOID __cdecl main()
 {
     int v = 1, d = 0;
     UACME_THREAD_CONTEXT uctx;

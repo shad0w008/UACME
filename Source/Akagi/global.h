@@ -1,12 +1,12 @@
 /*******************************************************************************
 *
-*  (C) COPYRIGHT AUTHORS, 2014 - 2018
+*  (C) COPYRIGHT AUTHORS, 2014 - 2020
 *
 *  TITLE:       GLOBAL.H
 *
-*  VERSION:     3.11
+*  VERSION:     3.23
 *
-*  DATE:        23 Nov 2018
+*  DATE:        18 Dec 2019
 *
 *  Common header file for the program support routines.
 *
@@ -53,7 +53,7 @@
 #define HIBIKI_ID IDR_HIBIKI32
 #define IKAZUCHI_ID IDR_IKAZUCHI32
 #define AKATSUKI_ID PAYLOAD_ID_NONE //this module unavailable for 32 bit
-#define KAMIKAZE_ID PAYLOAD_ID_NONE //this module unavailable for 32 bit
+#define KAMIKAZE_ID IDR_KAMIKAZE
 #define FUJINAMI_ID IDR_FUJINAMI //this module is dotnet x86 for any supported platform
 #define CHIYODA_ID PAYLOAD_ID_NONE //this module unavailable for 32 bit
 #define KONGOU_ID KONGOU_IDR
@@ -136,7 +136,7 @@ typedef UINT(WINAPI *pfnEntryPoint)(
 typedef struct _UACME_THREAD_CONTEXT {
     TEB_ACTIVE_FRAME Frame;
     pfnEntryPoint ucmMain;
-    DWORD ReturnedResult;
+    NTSTATUS ReturnedResult;
     ULONG OptionalParameterLength;
     LPWSTR OptionalParameter;
 } UACME_THREAD_CONTEXT, *PUACME_THREAD_CONTEXT;

@@ -1,12 +1,12 @@
 /*******************************************************************************
 *
-*  (C) COPYRIGHT AUTHORS, 2017 - 2018
+*  (C) COPYRIGHT AUTHORS, 2017 - 2020
 *
 *  TITLE:       TEST.C
 *
-*  VERSION:     3.10
+*  VERSION:     3.23
 *
-*  DATE:        11 Nov 2018
+*  DATE:        17 Dec 2019
 *
 * THIS CODE AND INFORMATION IS PROVIDED "AS IS" WITHOUT WARRANTY OF
 * ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED
@@ -29,7 +29,8 @@ BOOL ucmTestRoutine(
     _In_opt_ ULONG PayloadSize)
 {
     UNREFERENCED_PARAMETER(PayloadCode);
-    UNREFERENCED_PARAMETER(PayloadSize);
+    UNREFERENCED_PARAMETER(PayloadSize); 
 
+    SetEvent(g_ctx->SharedContext.hCompletionEvent);
     return TRUE;
 }

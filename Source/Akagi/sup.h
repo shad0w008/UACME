@@ -1,12 +1,12 @@
 /*******************************************************************************
 *
-*  (C) COPYRIGHT AUTHORS, 2014 - 2018
+*  (C) COPYRIGHT AUTHORS, 2014 - 2020
 *
 *  TITLE:       SUP.H
 *
-*  VERSION:     3.11
+*  VERSION:     3.23
 *
-*  DATE:        23 Nov 2018
+*  DATE:        17 Dec 2019
 *
 *  Common header file for the program support routines.
 *
@@ -17,6 +17,46 @@
 *
 *******************************************************************************/
 #pragma once
+
+typedef BOOL(WINAPI* pfnShellExecuteExW)(
+    SHELLEXECUTEINFOW* pExecInfo);
+
+typedef DWORD(WINAPI* pfnWaitForSingleObject)(
+    HANDLE hHandle,
+    DWORD dwMilliseconds);
+
+typedef BOOL(WINAPI* pfnCloseHandle)(
+    HANDLE hObject);
+
+typedef HRESULT(WINAPI* pfnCoInitialize)(
+    LPVOID pvReserved);
+
+typedef HRESULT(WINAPI* pfnCoGetObject)(
+    LPCWSTR pszName,
+    BIND_OPTS* pBindOptions,
+    REFIID riid,
+    void** ppv);
+
+typedef HRESULT(WINAPI* pfnSHCreateItemFromParsingName)(
+    PCWSTR pszPath,
+    IBindCtx* pbc,
+    REFIID riid,
+    void** ppv);
+
+typedef void(WINAPI* pfnCoUninitialize)(
+    VOID);
+
+typedef NTSTATUS(NTAPI* pfnRtlExitUserThread)(
+    _In_ NTSTATUS ExitStatus);
+
+typedef struct tagLOAD_PARAMETERS {
+    WCHAR                   szVerb[10];
+    WCHAR                   szTargetApp[MAX_PATH + 1];
+    pfnShellExecuteExW      ShellExecuteExW;
+    pfnWaitForSingleObject  WaitForSingleObject;
+    pfnCloseHandle          CloseHandle;
+    pfnRtlExitUserThread    RtlExitUserThread;
+} LOAD_PARAMETERS, * PLOAD_PARAMETERS;
 
 typedef struct tagUCM_PROCESS_MITIGATION_POLICIES {
     PROCESS_MITIGATION_EXTENSION_POINT_DISABLE_POLICY ExtensionPointDisablePolicy;
@@ -90,6 +130,12 @@ BOOL supWriteBufferToFile(
     _In_ PVOID Buffer,
     _In_ DWORD BufferSize);
 
+BOOL supWriteBufferToFile2(
+    _In_ LPWSTR lpFileName,
+    _In_ PVOID Buffer,
+    _In_ DWORD BufferSize,
+    _In_ BOOLEAN AppendFile);
+
 BOOL supDecodeAndWriteBufferToFile(
     _In_ LPWSTR lpFileName,
     _In_ CONST PVOID Buffer,
@@ -104,6 +150,7 @@ BOOL supRunProcess2(
     _In_ LPWSTR lpszProcessName,
     _In_opt_ LPWSTR lpszParameters,
     _In_opt_ LPWSTR lpVerb,
+    _In_ INT nShow,
     _In_ BOOL fWait);
 
 BOOL supRunProcess(
@@ -241,13 +288,11 @@ BOOL supDesktopToName(
     _In_ DWORD cbBuffer,
     _Out_ PDWORD BytesNeeded);
 
-BOOL supQueryNtBuildNumber(
-    _Inout_ PULONG BuildNumber);
-
-BOOL supConvertDllToExeSetNewEP(
-    _In_ PVOID pvImage,
-    _In_ ULONG dwImageSize,
-    _In_ LPSTR lpszEntryPoint);
+BOOL supReplaceDllEntryPoint(
+    _In_ PVOID DllImage,
+    _In_ ULONG SizeOfDllImage,
+    _In_ LPCSTR lpEntryPointName,
+    _In_ BOOL fConvertToExe);
 
 NTSTATUS supRegReadValue(
     _In_ HANDLE hKey,
@@ -278,9 +323,6 @@ NTSTATUS supRemoveRegLinkHKCU(
 BOOL supIsConsentApprovedInterface(
     _In_ LPWSTR InterfaceName,
     _Out_ PBOOL IsApproved);
-
-BOOL supIsDebugPortPresent(
-    VOID);
 
 BOOL supGetProcessMitigationPolicy(
     _In_ HANDLE hProcess,
@@ -323,6 +365,23 @@ PVOID supCreateUacmeContext(
 
 VOID supDestroyUacmeContext(
     _In_ PVOID Context);
+
+NTSTATUS supEnableDisableWow64Redirection(
+    _In_ BOOL bDisable);
+
+BOOLEAN supIndirectRegAdd(
+    _In_ WCHAR* pszRootKey,
+    _In_ WCHAR* pszKey,
+    _In_opt_ WCHAR* pszValue,
+    _In_opt_ WCHAR* pszDataType,
+    _In_ WCHAR* pszData);
+
+BOOLEAN supIsNetfx48PlusInstalled(
+    VOID);
+
+NTSTATUS supGetProcessDebugObject(
+    _In_ HANDLE ProcessHandle,
+    _Out_ PHANDLE DebugObjectHandle);
 
 #ifdef _DEBUG
 #define supDbgMsg(Message)  OutputDebugString(Message)

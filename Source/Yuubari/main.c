@@ -1,12 +1,12 @@
 /*******************************************************************************
 *
-*  (C) COPYRIGHT AUTHORS, 2014 - 2018
+*  (C) COPYRIGHT AUTHORS, 2014 - 2020
 *
 *  TITLE:       MAIN.C
 *
-*  VERSION:     1.35
+*  VERSION:     1.47
 *
-*  DATE:        19 Nov 2018
+*  DATE:        22 Mar 2020
 *
 *  Program entry point.
 *
@@ -23,6 +23,14 @@ BOOL    g_VerboseOutput = FALSE;
 ULONG   g_NtBuildNumber = 0;
 HANDLE  g_LogFile = INVALID_HANDLE_VALUE;
 
+VOID LoggerWriteHeader(
+    _In_ LPWSTR lpHeaderData)
+{
+    LoggerWrite(g_LogFile, T_SPLIT, FALSE);
+    LoggerWrite(g_LogFile, lpHeaderData, FALSE);
+    LoggerWrite(g_LogFile, T_SPLIT, TRUE);
+}
+
 /*
 * AppInfoDataOutputCallback
 *
@@ -33,7 +41,7 @@ HANDLE  g_LogFile = INVALID_HANDLE_VALUE;
 */
 VOID AppInfoDataOutputCallback(
     UAC_AI_DATA *Data
-    )
+)
 {
     LPWSTR lpLog = NULL, Text = NULL;
     SIZE_T sz = 0;
@@ -92,7 +100,7 @@ VOID AppInfoDataOutputCallback(
 */
 VOID WINAPI BasicDataOutputCallback(
     UAC_BASIC_DATA *Data
-    )
+)
 {
     LPWSTR lpLog = NULL;
     SIZE_T sz = 0;
@@ -130,7 +138,7 @@ VOID WINAPI BasicDataOutputCallback(
 */
 VOID WINAPI RegistryOutputCallback(
     UAC_REGISTRY_DATA *Data
-    )
+)
 {
     UAC_INTERFACE_DATA *InterfaceData;
     LPOLESTR OutputString = NULL;
@@ -138,8 +146,12 @@ VOID WINAPI RegistryOutputCallback(
     if (Data == NULL)
         return;
 
-
-    if (Data->DataType == UacCOMDataCommonType) {
+    if (Data->DataType == UacCOMDataVirtualFactory) {
+        LoggerWrite(g_LogFile, TEXT("VirtualFactory"), TRUE);
+    }
+    if ((Data->DataType == UacCOMDataCommonType) ||
+        (Data->DataType == UacCOMDataVirtualFactory))
+    {
         //
         // Output current registry key to show that we are alive.
         //
@@ -148,12 +160,17 @@ VOID WINAPI RegistryOutputCallback(
         LoggerWrite(g_LogFile, Data->AppId, TRUE);
         LoggerWrite(g_LogFile, Data->LocalizedString, TRUE);
         LoggerWrite(g_LogFile, Data->Key, TRUE);
-        LoggerWrite(g_LogFile, TEXT("\n"), TRUE);
+        LoggerWrite(g_LogFile, TEXT("\r\n"), TRUE);
     }
 
-    if (Data->DataType == UacCOMDataInterfaceType) {
+    if (Data->DataType == UacCOMDataInterfaceTypeVF) {
+        LoggerWrite(g_LogFile, TEXT("VirtualFactory Item"), TRUE);
+    }
 
-        InterfaceData = (UAC_INTERFACE_DATA*)Data;
+    if ((Data->DataType == UacCOMDataInterfaceType) ||
+        (Data->DataType == UacCOMDataInterfaceTypeVF))
+    {
+        InterfaceData = (UAC_INTERFACE_DATA*)(PVOID)Data;
 
         LoggerWrite(g_LogFile, InterfaceData->Name, TRUE);
         cuiPrintText(InterfaceData->Name, TRUE);
@@ -170,8 +187,8 @@ VOID WINAPI RegistryOutputCallback(
             cuiPrintText(OutputString, TRUE);
             CoTaskMemFree(OutputString);
         }
-        LoggerWrite(g_LogFile, TEXT("\n"), TRUE);
-        cuiPrintText(TEXT("\n"), TRUE);
+        LoggerWrite(g_LogFile, TEXT("\r\n"), TRUE);
+        cuiPrintText(TEXT("\r\n"), TRUE);
     }
 }
 
@@ -185,7 +202,7 @@ VOID WINAPI RegistryOutputCallback(
 */
 VOID WINAPI FusionOutputCallback(
     UAC_FUSION_DATA *Data
-    )
+)
 {
     LPWSTR lpText;
     LPWSTR lpLog = NULL;
@@ -200,7 +217,7 @@ VOID WINAPI FusionOutputCallback(
         //
         // Display only binaries with autoelevation flags if not in verbose output
         //
-        if ((Data->AutoElevateState == AutoElevateUnspecified) && (g_VerboseOutput == FALSE)) 
+        if ((Data->AutoElevateState == AutoElevateUnspecified) && (g_VerboseOutput == FALSE))
             return;
 
         //
@@ -213,7 +230,7 @@ VOID WINAPI FusionOutputCallback(
         //
         // If application has autoElevate attribute, report full info
         //
-        if (Data->IsFusion) {           
+        if (Data->IsFusion) {
             switch (Data->RunLevel.RunLevel) {
             case ACTCTX_RUN_LEVEL_AS_INVOKER:
                 lpText = TEXT("asInvoker");
@@ -231,7 +248,7 @@ VOID WINAPI FusionOutputCallback(
             }
             //RequestedExecutionLevel 
             LoggerWrite(g_LogFile, lpText, TRUE);
-           
+
             if (Data->RunLevel.UiAccess > 0) {
                 lpText = TEXT("uiAccess=TRUE");
             }
@@ -249,6 +266,9 @@ VOID WINAPI FusionOutputCallback(
                     break;
                 case AutoElevateDisabled:
                     lpText = TEXT("autoElevate=FALSE");
+                    break;
+                case AutoElevateExempted:
+                    lpText = TEXT("autoElevate=Exempted");
                     break;
                 default:
                     break;
@@ -301,11 +321,11 @@ VOID WINAPI FusionOutputCallback(
 */
 VOID ListBasicSettings(
     VOID
-    )
+)
 {
-    cuiPrintText(TEXT("\n[UacView] Basic UAC settings\n"), TRUE);
-    ScanBasicUacData((BASICDATACALLBACK)BasicDataOutputCallback);
-    LoggerWrite(g_LogFile, TEXT("================================================\n"), TRUE);
+    cuiPrintText(T_BASIC_HEAD, TRUE);
+    LoggerWriteHeader(T_BASIC_HEAD);
+    ScanBasicUacData((OUTPUTCALLBACK)BasicDataOutputCallback);
 }
 
 /*
@@ -318,11 +338,42 @@ VOID ListBasicSettings(
 */
 VOID ListCOMFromRegistry(
     VOID
-    )
+)
 {
-    cuiPrintText(TEXT("\n[UacView] Autoelevated COM objects\n"), TRUE);
-    CoListInformation((REGCALLBACK)RegistryOutputCallback);
-    LoggerWrite(g_LogFile, TEXT("================================================\n"), TRUE);
+    INTERFACE_INFO_LIST InterfaceList;
+
+    if (CoInitializeEx(NULL, COINIT_APARTMENTTHREADED) != S_OK)
+        return;
+
+    RtlSecureZeroMemory(&InterfaceList, sizeof(InterfaceList));
+
+    __try {
+
+        if (!CoEnumInterfaces(&InterfaceList))
+            __leave;
+
+        cuiPrintText(T_COM_HEAD, TRUE);
+        LoggerWriteHeader(T_COM_HEAD);
+        CoListInformation((OUTPUTCALLBACK)RegistryOutputCallback, &InterfaceList);
+
+
+        //
+        // AutoApproval COM list added since RS1.
+        //
+        if (g_NtBuildNumber >= 14393) {
+            cuiPrintText(T_COM_APPROVE_HEAD, TRUE);
+            LoggerWriteHeader(T_COM_APPROVE_HEAD);
+            CoScanAutoApprovalList((OUTPUTCALLBACK)RegistryOutputCallback, &InterfaceList);
+        }
+        cuiPrintText(T_BROKER_APPROVE_HEAD, TRUE);
+        LoggerWriteHeader(T_BROKER_APPROVE_HEAD);
+        CoScanBrokerApprovalList((OUTPUTCALLBACK)RegistryOutputCallback, &InterfaceList);
+    }
+    __finally {
+        CoUninitialize();
+        if (InterfaceList.List)
+            HeapFree(GetProcessHeap(), 0, InterfaceList.List);
+    }
 }
 
 /*
@@ -335,7 +386,7 @@ VOID ListCOMFromRegistry(
 */
 VOID ListFusion(
     VOID
-    )
+)
 {
     HMODULE hModule;
     WCHAR   szPath[MAX_PATH * 2];
@@ -350,17 +401,19 @@ VOID ListFusion(
     }
 
     //scan Windows first
-    cuiPrintText(TEXT("\n[UacView] Autoelevated applications in Windows directory\n"), TRUE);
+    cuiPrintText(T_WINFILES_HEAD, TRUE);
+    LoggerWriteHeader(T_WINFILES_HEAD);
 
 #ifdef _DEBUG
-    FusionScanDirectory(L"C:\\sxs", (FUSIONCALLBACK)FusionOutputCallback);
+    FusionScanDirectory(L"C:\\Windows\\WinSxS", (OUTPUTCALLBACK)FusionOutputCallback);
     return;
 #else
-    FusionScanDirectory(USER_SHARED_DATA->NtSystemRoot, (FUSIONCALLBACK)FusionOutputCallback);
-    LoggerWrite(g_LogFile, TEXT("================================================\n"), TRUE);
+    FusionScanDirectory(USER_SHARED_DATA->NtSystemRoot, (OUTPUTCALLBACK)FusionOutputCallback);
 
     //scan program files next
-    cuiPrintText(TEXT("\n[UacView] Autoelevated applications in Program Files directory\n"), TRUE);
+    cuiPrintText(T_PFDIRFILES_HEAD, TRUE);
+    LoggerWriteHeader(T_PFDIRFILES_HEAD);
+
     RtlSecureZeroMemory(szPath, sizeof(szPath));
     if (SUCCEEDED(SHGetFolderPath(NULL,
         CSIDL_PROGRAM_FILES,
@@ -368,9 +421,8 @@ VOID ListFusion(
         SHGFP_TYPE_CURRENT,
         (LPWSTR)&szPath)))
     {
-        FusionScanDirectory(szPath, (FUSIONCALLBACK)FusionOutputCallback);
+        FusionScanDirectory(szPath, (OUTPUTCALLBACK)FusionOutputCallback);
     }
-    LoggerWrite(g_LogFile, TEXT("================================================\n"), TRUE);
 #endif
 }
 
@@ -384,21 +436,20 @@ VOID ListFusion(
 */
 VOID ListAppInfo(
     VOID
-    )
+)
 {
     WCHAR szFileName[MAX_PATH * 2];
 
-    cuiPrintText(TEXT("\n[UacView] Appinfo data\n"), TRUE);
+    cuiPrintText(T_APPINFO_HEAD, TRUE);
+    LoggerWriteHeader(T_APPINFO_HEAD);
 
+//#ifndef _DEBUG
     _strcpy(szFileName, USER_SHARED_DATA->NtSystemRoot);
     _strcat(szFileName, TEXT("\\system32\\appinfo.dll"));
-
-#ifdef _DEBUG
-    _strcpy(szFileName, TEXT("D:\\dumps\\appinfo\\17134.dll"));
-#endif
-    ScanAppInfo(szFileName, (APPINFODATACALLBACK)AppInfoDataOutputCallback);
-
-    LoggerWrite(g_LogFile, TEXT("================================================\n"), TRUE);
+/*#else
+    _strcpy(szFileName, TEXT("C:\\appinfo\\18975.dll"));
+#endif*/
+    ScanAppInfo(szFileName, (OUTPUTCALLBACK)AppInfoDataOutputCallback);
 }
 
 /*
@@ -416,19 +467,20 @@ VOID main()
 
     __security_init_cookie();
 
+    HeapSetInformation(GetProcessHeap(), HeapEnableTerminationOnCorruption, NULL, 0);
+
     cuiInitialize(FALSE, NULL);
 
     cuiPrintText(T_PROGRAM_TITLE, TRUE);
 
-    g_NtBuildNumber = 0;
-    supQueryNtBuildNumber(&g_NtBuildNumber);
+    g_NtBuildNumber = USER_SHARED_DATA->NtBuildNumber;
 
     if (g_NtBuildNumber < YUUBARI_MIN_SUPPORTED_NT_BUILD) {
         cuiPrintText(TEXT("[UacView] Unsupported Windows version."), TRUE);
         ExitProcess(0);
     }
     if (g_NtBuildNumber > YUUBARI_MAX_SUPPORTED_NT_BUILD) {
-        cuiPrintText(TEXT("\n[UacView] Not all features available for this build\n"), TRUE);
+        cuiPrintText(TEXT("\r\n[UacView] Not all features available for this build\r\n"), TRUE);
     }
 
     RtlSecureZeroMemory(szBuffer, sizeof(szBuffer));
@@ -457,8 +509,9 @@ VOID main()
     ListCOMFromRegistry();
 #endif
     ListAppInfo();
+#ifndef _DEBUG
     ListFusion();
-
+#endif
     if (g_LogFile != INVALID_HANDLE_VALUE)
         CloseHandle(g_LogFile);
 
